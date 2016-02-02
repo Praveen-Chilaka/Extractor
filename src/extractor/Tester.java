@@ -12,13 +12,15 @@ public class Tester {
 		ObjectMapper mapper = new ObjectMapper();
 		GoogleFinanceDataDownloader test = new GoogleFinanceDataDownloader();
 		MongoDBConnector mdc = new MongoDBConnector();
+		Configuration c = new Configuration();
+		//c.loadProperties();
 		//String url = GoogleFinanceDataDownloader.FIN_URL+"VIPS"+"&output=json";
 		//Stock s = test.urlGet(url);
 		//try {
 			//AllCurrentOptions o = test.getAllCurrentOptions("VIPS");
 			//String jsonInString = mapper.writeValueAsString(test.downloadIntraDayPrices("AAPL"));
 			//System.out.println(jsonInString);
-			mdc.createDB("test");
+			//mdc.createDB("test");
 		//} catch (JsonProcessingException e) {
 			// TODO Auto-generated catch block
 			//e.printStackTrace();

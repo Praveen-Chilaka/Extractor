@@ -79,6 +79,7 @@ public class MongoDBConnector {
 		int returnCode = 0;
 		try {
 
+			System.out.println("Creating collection :"+col+" for db --> "+db);
 			URL url = new URL("http://localhost:8080/"+db+"/"+col);
 			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 			conn.setDoOutput(true);
@@ -105,7 +106,7 @@ public class MongoDBConnector {
 	public int createDB(String db) {
 		int returnCode = 0;
 		try {
-
+			System.out.println("Creating db --> "+db);
 			URL url = new URL("http://localhost:8080/"+db);
 			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 			conn.setDoOutput(true);

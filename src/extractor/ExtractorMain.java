@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.BreakIterator;
 import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -32,14 +34,148 @@ public class ExtractorMain {
 
 		try {
 
-			//ExtractorMain em = new ExtractorMain();
-			//em.eodFunctions(7);
-			//MongoDBConnector mdc = new MongoDBConnector();
-			//mdc.createCollectionAndPost("test_s", "test1234", "");
-			System.out.println("Argument given ::"+args[0]);
+			// Load the configurations
+			Map<String, String> argMap = new HashMap<String, String>();
+			for (String val : args) {
+				System.out.println("Argument given ::" + val);
+				argMap.put(val.split("=")[0], val.split("=")[1]);
+			}
+			Configuration c = new Configuration();
+			Map<String, String> configMap = c.loadProperties(argMap.get("config"));
+			/*
+			 * for (Map.Entry<String, String> entry : configMap.entrySet()) {
+			 * System.out.println("Key : " + entry.getKey() + " Value : " +
+			 * entry.getValue()); }
+			 */
+			// Call the function based on the input
+			if (argMap.get(ConfigConstants.FUNC_OPTION) != null) {
+				int function = Integer.valueOf(argMap.get(ConfigConstants.FUNC_OPTION));
+				ExtractorMain em = new ExtractorMain();
+				em.eodFunctions(function, configMap);
+			}
 
 		} catch (Exception e) {
 			e.printStackTrace();
+		}
+
+	}
+
+	/**
+	 * 
+	 * @param type
+	 */
+	public void eodFunctions(int type, Map<String, String> configMap) {
+
+		EODConnector eod = new EODConnector();
+		MongoDBConnector mDb = new MongoDBConnector();
+		// make sure cookies is turn on
+		CookieHandler.setDefault(new CookieManager());
+		try {
+
+			switch (type) {
+			// Load Fundamentals from EOD Website/Google
+			case 1: {
+				this.loadSymbolList(eod, "NASDAQ", configMap.get(ConfigConstants.PATH)+"NASDAQ.txt",
+						configMap.get(ConfigConstants.TICK_COLL_N_NASDAQ));
+				System.out.println("NASDAQ Symbol loaded successfully");
+				this.loadSymbolList(eod, "NYSE", configMap.get(ConfigConstants.PATH)+"NYSE.txt",
+						configMap.get(ConfigConstants.TICK_COLL_N_NYSE));
+				System.out.println("NYSE Symbol loaded successfully");
+				this.loadSymbolList(eod, "AMEX", configMap.get(ConfigConstants.PATH)+"AMEX.txt",
+						configMap.get(ConfigConstants.TICK_COLL_N_AMEX));
+				System.out.println("AMEX Symbol loaded successfully");
+				this.loadSymbolList(eod, "INDEX", configMap.get(ConfigConstants.PATH)+"INDEX.txt",
+						configMap.get(ConfigConstants.TICK_COLL_N_INDEX));
+				System.out.println("INDEX Symbol loaded successfully");
+			}
+			case 2: // Download SymbolList from EOD WebSite
+			{
+				// 1. Send a "GET" request, so that you can extract the form's
+				// data.
+				String page = eod.GetPageContent(url, 1, null);
+				String postParams = eod.getFormParams(page, "praveen.chilakalapudi@gmail.com", "Aeiou@123");
+				// 2. Construct above post's content and then send a POST
+				// request
+				// for
+				// authentication
+				eod.sendPost(url, postParams);
+				this.downloadSymbolList(eod, configMap);
+			}
+			case 3: // Download EOD Data from EOD WebSite
+			{
+				List<String> l = this.extractSym("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
+				for (String sym : l) {
+					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
+					// String fileName = gfdd.downloadHistoricalEODData(sym);
+					// System.out.println("Historic EOD for "+sym+" downloaded
+					// successfully & Path is ==>"+fileName);
+					// String command = ""+fileName;
+					// this.executeCommand("");
+				}
+			}
+			case 4: // Download PreMarket data from Google
+			{
+				System.out.println("Downloading PreMarket Data...@ " + System.currentTimeMillis());
+				GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
+				List<String> l = this.extractSymbols("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
+				for (String sym : l) {
+					gfdd.downloadPreMarketData(
+							"http://www.google.com/finance/info?infotype=infoquoteall&q=" + sym + "&format=json");
+					System.out.println("Downloaded preMarket data for Symbols :" + sym);
+				}
+			}
+			case 5: // Download PostMarket data from Google
+			{
+			}
+			case 6: // Download Intra-day prices
+			{
+				String dbName = "test_s";
+				List<String> l = this.extractSym("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
+				for (String sym : l) {
+					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
+					List<StockData> sd = gfdd.downloadIntraDayPrices(sym);
+					for (StockData stock : sd) {
+						Gson gson = new Gson();
+						String intrDay = gson.toJson(stock);
+						// System.out.println("Created jsonFundamentals for :" +
+						// sym +" are "+ intrDay);
+						mDb.postAndCreate(dbName, sym, intrDay);
+					}
+				}
+			}
+			case 7: // Download Options
+			{
+				String dbName = "test_o";
+				this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt", dbName,
+						"nasdaq_options");
+				System.out.println("NASDAQ Symbols Options loaded successfully");
+				this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NYSE.txt", dbName,
+						"nyse_options");
+				System.out.println("NYSE Symbols Options loaded successfully");
+				this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/AMEX.txt", dbName,
+						"amex_options");
+				System.out.println("AMEX Symbols Options loaded successfully");
+				// this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/INDEX.txt",
+				// dbName,"index_fundamentals");
+				// System.out.println("INDEX Symbol loaded successfully");
+			}
+			case 8: // Download and import Historical EOD data
+			{
+
+				List<String> l = this.extractSym("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
+				for (String sym : l) {
+					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
+					// String fileName = gfdd.downloadHistoricalEODData(sym);
+					// System.out.println("Historic EOD for "+sym+" downloaded
+					// successfully & Path is ==>"+fileName);
+					// String command = ""+fileName;
+					// this.executeCommand("");
+				}
+			}
+
+			}
+		} catch (Exception e) {
+
 		}
 
 	}
@@ -50,16 +186,16 @@ public class ExtractorMain {
 	 * @param eod
 	 * @throws Exception
 	 */
-	public void downloadSymbolList(EODConnector eod) throws Exception {
+	public void downloadSymbolList(EODConnector eod, Map<String, String> configMap) throws Exception {
 
-		String symbolListURL = "http://www.eoddata.com/Data/symbollist.aspx?e=NASDAQ";
-		eod.GetPageContent(symbolListURL, 2);
+		String symbolListURL = configMap.get(ConfigConstants.EOD_S_LIST);
+		eod.GetPageContent(symbolListURL, 2, configMap.get(ConfigConstants.PATH));
 		String nyseURL = symbolListURL.replaceFirst("NASDAQ", "NYSE");
-		eod.GetPageContent(nyseURL, 2);
+		eod.GetPageContent(nyseURL, 2, configMap.get(ConfigConstants.PATH));
 		String amexURL = symbolListURL.replaceFirst("NASDAQ", "AMEX");
-		eod.GetPageContent(amexURL, 2);
+		eod.GetPageContent(amexURL, 2, configMap.get(ConfigConstants.PATH));
 		String indexURL = symbolListURL.replaceFirst("NASDAQ", "INDEX");
-		eod.GetPageContent(indexURL, 2);
+		eod.GetPageContent(indexURL, 2, configMap.get(ConfigConstants.PATH));
 
 	}
 
@@ -69,8 +205,7 @@ public class ExtractorMain {
 	 * 
 	 * @throws Exception
 	 */
-	public void loadSymbolList(EODConnector eod, String exchange, String fileName, String dbName, String collName)
-			throws Exception {
+	public void loadSymbolList(EODConnector eod, String exchange, String fileName, String collName) throws Exception {
 
 		// Read the txt file
 		BufferedReader br = null;
@@ -91,22 +226,23 @@ public class ExtractorMain {
 				symbol = symbol.replace(".IDX", "");
 				if (!"Symbol".equalsIgnoreCase(symbol)) {
 					System.out.println("Fetching datas for :: " + symbol);
-					String result = eod
-							.GetPageContent("http://www.eoddata.com/stockquote/" + exchange + "/" + symbol + ".htm", 1);
+					String result = eod.GetPageContent(
+							"http://www.eoddata.com/stockquote/" + exchange + "/" + symbol + ".htm", 1, null);
 					Map<String, String> jsonMap = eod.getQuoteFundamentals(result, symbol);
-					if(isIndex < 0) {
+					if (isIndex < 0) {
 						// Call google to some additional data
 						GoogleStockData gsd = gfdd.getStockFundamentals(symbol);
-						if(gsd != null) {
+						if (gsd != null) {
 							jsonMap.put("Name", gsd.getName());
 							jsonMap.put("Inst Own", gsd.getInst_own());
+							jsonMap.put("Exchange", exchange);
 						}
 					}
 					Gson gson = new Gson();
 					String jsonFundamentals = gson.toJson(jsonMap);
-					System.out.println("Created jsonFundamentals for :" + symbol +" are "+ jsonFundamentals);					
-					mDb.postAndCreate(dbName, symbol, jsonFundamentals);
-					//break; // Remove after testing
+					System.out.println("Created jsonFundamentals for :" + symbol + " are " + jsonFundamentals);
+					mDb.postAndCreate(symbol, collName, jsonFundamentals);
+					// break; // Remove after testing
 				}
 
 			}
@@ -137,13 +273,14 @@ public class ExtractorMain {
 		BufferedReader br = null;
 		String strLine = "";
 		List<String> symbolList = null;
-		List<String> symbolList100s = new ArrayList<String>();;
+		List<String> symbolList100s = new ArrayList<String>();
+		;
 		int sCount = 0;
-		
+
 		try {
 			br = new BufferedReader(new FileReader(fileName));
 			while ((strLine = br.readLine()) != null) {
-				//System.out.println(strLine);
+				// System.out.println(strLine);
 
 				BreakIterator boundary = BreakIterator.getWordInstance();
 				boundary.setText(strLine);
@@ -151,15 +288,16 @@ public class ExtractorMain {
 				int end = boundary.next();
 				String symbol = strLine.substring(start, end);
 				if (!"Symbol".equalsIgnoreCase(symbol)) {
-					//System.out.println("Fetching datas for :: " + symbol);
-					if(symbolList == null || sCount > 99) {
-						//System.out.println("symbolList :"+symbolList+" sCount :"+sCount);
+					// System.out.println("Fetching datas for :: " + symbol);
+					if (symbolList == null || sCount > 99) {
+						// System.out.println("symbolList :"+symbolList+" sCount
+						// :"+sCount);
 						symbolList = new ArrayList<String>();
 						sCount = 0;
 					}
 					symbolList.add(symbol);
-					sCount  = sCount + 1;
-					if(sCount > 99) {
+					sCount = sCount + 1;
+					if (sCount > 99) {
 						symbolList100s.add(StringUtils.join(symbolList, ','));
 					}
 				}
@@ -180,7 +318,7 @@ public class ExtractorMain {
 		}
 		return symbolList100s;
 	}
-	
+
 	/**
 	 * 
 	 * @param fileName
@@ -191,11 +329,11 @@ public class ExtractorMain {
 		BufferedReader br = null;
 		String strLine = "";
 		List<String> symbolList = new ArrayList<String>();
-		
+
 		try {
 			br = new BufferedReader(new FileReader(fileName));
 			while ((strLine = br.readLine()) != null) {
-				//System.out.println(strLine);
+				// System.out.println(strLine);
 
 				BreakIterator boundary = BreakIterator.getWordInstance();
 				boundary.setText(strLine);
@@ -203,7 +341,7 @@ public class ExtractorMain {
 				int end = boundary.next();
 				String symbol = strLine.substring(start, end);
 				if (!"Symbol".equalsIgnoreCase(symbol)) {
-					//System.out.println("Fetching datas for :: " + symbol);
+					// System.out.println("Fetching datas for :: " + symbol);
 					symbolList.add(symbol);
 				}
 
@@ -223,12 +361,12 @@ public class ExtractorMain {
 		}
 		return symbolList;
 	}
-	
+
 	/*
 	 * 
 	 * 
 	 */
-	public void downloadEODOptionsData(String fileName,String dbName, String collName) {
+	public void downloadEODOptionsData(String fileName, String dbName, String collName) {
 		// Read the txt file
 		BufferedReader br = null;
 		String strLine = "";
@@ -247,11 +385,11 @@ public class ExtractorMain {
 					System.out.println("Fetching datas for :: " + symbol);
 					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
 					String optionsString = gfdd.getAllCurrentOptions(symbol);
-					if(null != optionsString) {
+					if (null != optionsString) {
 						mDb.postAndCreate(dbName, symbol, optionsString);
 						System.out.println("Posted options data");
 					}
-					//break; // Remove after testing
+					// break; // Remove after testing
 				}
 
 			}
@@ -273,113 +411,6 @@ public class ExtractorMain {
 
 	/**
 	 * 
-	 * @param type
-	 */
-	public void eodFunctions(int type) {
-
-		EODConnector eod = new EODConnector();
-		MongoDBConnector mDb = new MongoDBConnector();
-		// make sure cookies is turn on
-		CookieHandler.setDefault(new CookieManager());
-		try {
-
-			switch (type) {
-			// Load Fundamentals from EOD Website/Google
-			case 1: {
-				String dbName = "test_s";
-				//this.loadSymbolList(eod, "NASDAQ", "/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt",dbName, "nasdaq_fund");
-				System.out.println("NASDAQ Symbol loaded successfully");
-				//this.loadSymbolList(eod, "NYSE", "/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NYSE.txt", dbName,"nyse_fundamentals");
-				System.out.println("NYSE Symbol loaded successfully");
-				//this.loadSymbolList(eod, "AMEX", "/Users/Praveen/Praveen/VMs/SharedFolders/EODData/AMEX.txt", dbName,"amex_fundamentals");
-				System.out.println("AMEX Symbol loaded successfully");
-				this.loadSymbolList(eod, "INDEX", "/Users/Praveen/Praveen/VMs/SharedFolders/EODData/INDEX.txt", dbName,"index_fundamentals");
-				System.out.println("INDEX Symbol loaded successfully");
-			}
-			case 2: // Download SymbolList from EOD WebSite
-			{
-				// 1. Send a "GET" request, so that you can extract the form's data.
-				String page = eod.GetPageContent(url, 1);
-				String postParams = eod.getFormParams(page, "praveen.chilakalapudi@gmail.com", "Aeiou@123");
-				// 2. Construct above post's content and then send a POST request
-				// for
-				// authentication
-				eod.sendPost(url, postParams);
-				this.downloadSymbolList(eod);
-			}
-			case 3: // Download EOD Data from EOD WebSite
-			{
-				List<String> l = this.extractSym("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
-				for (String sym : l) {
-					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
-					//String fileName = gfdd.downloadHistoricalEODData(sym);
-					//System.out.println("Historic EOD for "+sym+" downloaded successfully & Path is ==>"+fileName);
-					//String command = ""+fileName;
-					//this.executeCommand("");
-				}
-			}
-			case 4: // Download PreMarket data from Google
-			{
-				System.out.println("Downloading PreMarket Data...@ "+System.currentTimeMillis());
-				GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
-				List<String> l = this.extractSymbols("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
-				for (String sym : l) {
-					gfdd.downloadPreMarketData("http://www.google.com/finance/info?infotype=infoquoteall&q="+sym+"&format=json");
-					System.out.println("Downloaded preMarket data for Symbols :"+sym);
-				}
-			}
-			case 5: // Download PostMarket data from Google
-			{
-			}
-			case 6: // Download Intra-day prices
-			{
-				String dbName = "test_s";
-				List<String> l = this.extractSym("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
-				for (String sym : l) {
-					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
-					List<StockData> sd = gfdd.downloadIntraDayPrices(sym);
-					for (StockData stock : sd) {
-						Gson gson = new Gson();
-						String intrDay = gson.toJson(stock);
-						//System.out.println("Created jsonFundamentals for :" + sym +" are "+ intrDay);
-						mDb.postAndCreate(dbName, sym, intrDay);
-					}
-				}
-			}
-			case 7: // Download Options
-			{
-				String dbName = "test_o";
-				this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt",dbName, "nasdaq_options");
-				System.out.println("NASDAQ Symbols Options loaded successfully");
-				this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NYSE.txt", dbName,"nyse_options");
-				System.out.println("NYSE Symbols Options loaded successfully");
-				this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/AMEX.txt", dbName,"amex_options");
-				System.out.println("AMEX Symbols Options loaded successfully");
-				//this.downloadEODOptionsData("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/INDEX.txt", dbName,"index_fundamentals");
-				//System.out.println("INDEX Symbol loaded successfully");
-			}
-			case 8 : //Download and import Historical EOD data
-			{
-				
-				List<String> l = this.extractSym("/Users/Praveen/Praveen/VMs/SharedFolders/EODData/NASDAQ.txt");
-				for (String sym : l) {
-					GoogleFinanceDataDownloader gfdd = new GoogleFinanceDataDownloader();
-					//String fileName = gfdd.downloadHistoricalEODData(sym);
-					//System.out.println("Historic EOD for "+sym+" downloaded successfully & Path is ==>"+fileName);
-					//String command = ""+fileName;
-					//this.executeCommand("");
-				}
-			}
-
-			}
-		} catch (Exception e) {
-
-		}
-
-	}
-	
-	/**
-	 * 
 	 * @param command
 	 * @return
 	 */
@@ -391,11 +422,10 @@ public class ExtractorMain {
 		try {
 			p = Runtime.getRuntime().exec(command);
 			p.waitFor();
-			BufferedReader reader = 
-                            new BufferedReader(new InputStreamReader(p.getInputStream()));
+			BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
 
-                        String line = "";			
-			while ((line = reader.readLine())!= null) {
+			String line = "";
+			while ((line = reader.readLine()) != null) {
 				output.append(line + "\n");
 			}
 

@@ -33,7 +33,7 @@ public class EODConnector {
 	private final String USER_AGENT = "Mozilla/5.0";
 	private static final int BUFFER_SIZE = 4096;
 
-	public String GetPageContent(String url, int step) throws Exception {
+	public String GetPageContent(String url, int step, String filePath) throws Exception {
 
 		URL obj = new URL(url);
 		conn = (HttpURLConnection) obj.openConnection();
@@ -99,7 +99,7 @@ public class EODConnector {
 
 				// opens input stream from the HTTP connection
 				InputStream inputStream = conn.getInputStream();
-				String saveFilePath = "/Users/Praveen/Praveen/VMs/SharedFolders/EODData" + File.separator + fileName;
+				String saveFilePath = filePath + File.separator + fileName;
 
 				// opens an output stream to save into file
 				FileOutputStream outputStream = new FileOutputStream(saveFilePath);
